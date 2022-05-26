@@ -27,24 +27,9 @@ def make_parser():
     parser.add_argument("-expn", "--experiment-name", type=str, default=None)
     parser.add_argument("-n", "--name", type=str, default=None, help="model name")
 
-    parser.add_argument(
-        "--path", default="./assets/dog.jpg", help="path to images or video"
-    )
     parser.add_argument("--camid", type=int, default=0, help="webcam demo camera id")
-    parser.add_argument(
-        "--save_result",
-        action="store_true",
-        help="whether to save the inference result of image/video",
-    )
 
     # exp file
-    parser.add_argument(
-        "-f",
-        "--exp_file",
-        default=None,
-        type=str,
-        help="please input your experiment description file",
-    )
     parser.add_argument("-c", "--ckpt", default=None, type=str, help="ckpt for eval")
     parser.add_argument(
         "--device",
@@ -86,197 +71,19 @@ def make_parser():
     return parser
 
 
-def get_image_list(path):
-    image_names = []
-    for maindir, subdir, file_name_list in os.walk(path):
-        for filename in file_name_list:
-            apath = os.path.join(maindir, filename)
-            ext = os.path.splitext(apath)[1]
-            if ext in IMAGE_EXT:
-                image_names.append(apath)
-    return image_names
-
-
-class Predictor(object):
-    def __init__(
-        self,
-        model,
-        exp,
-        demo,
-        vis_folder,
-        save_result,
-        camid=None,
-        cls_names=GTSDB_CLASSES,
-        trt_file=None,
-        decoder=None,
-        device="cpu",
-        fp16=False,
-        legacy=False,
-    ):
-        self.model = model
-        self.cls_names = cls_names
-        self.decoder = decoder
-        self.num_classes = exp.num_classes
-        self.confthre = exp.test_conf
-        self.nmsthre = exp.nmsthre
-        self.test_size = exp.test_size
-        self.device = device
-        self.fp16 = fp16
-        self.preproc = ValTransform(legacy=legacy)
-        self.demo = demo
-        self.vis_folder = vis_folder
-        self.save_result = save_result
-        self.camid = camid
-        if trt_file is not None:
-            from torch2trt import TRTModule
-
-            model_trt = TRTModule()
-            model_trt.load_state_dict(torch.load(trt_file))
-
-            x = torch.ones(1, 3, exp.test_size[0], exp.test_size[1]).cuda()
-            self.model(x)
-            self.model = model_trt
-
-    def inference(self, img):
-        img_info = {"id": 0}
-        if isinstance(img, str):
-            img_info["file_name"] = os.path.basename(img)
-            img = cv2.imread(img)
-        else:
-            img_info["file_name"] = None
-
-        height, width = img.shape[:2]
-        img_info["height"] = height
-        img_info["width"] = width
-        img_info["raw_img"] = img
-
-        ratio = min(self.test_size[0] / img.shape[0], self.test_size[1] / img.shape[1])
-        img_info["ratio"] = ratio
-
-        img, _ = self.preproc(img, None, self.test_size)
-        img = torch.from_numpy(img).unsqueeze(0)
-        img = img.float()
-        if self.device == "gpu":
-            img = img.cuda()
-            if self.fp16:
-                img = img.half()  # to FP16
-
-        with torch.no_grad():
-            t0 = time.time()
-            outputs = self.model(img)
-            if self.decoder is not None:
-                outputs = self.decoder(outputs, dtype=outputs.type())
-            outputs = postprocess(
-                outputs, self.num_classes, self.confthre,
-                self.nmsthre, class_agnostic=True
-            )
-            logger.info("Infer time: {:.4f}s".format(time.time() - t0))
-        return outputs, img_info
-
-    def visual(self, output, img_info, cls_conf=0.35):
-        ratio = img_info["ratio"]
-        img = img_info["raw_img"]
-        if output is None:
-            return img
-        output = output.cpu()
-
-        bboxes = output[:, 0:4]
-
-        # preprocessing: resize
-        bboxes /= ratio
-
-        cls = output[:, 6]
-        scores = output[:, 4] * output[:, 5]
-
-        vis_res = vis(img, bboxes, scores, cls, cls_conf, self.cls_names)
-        return vis_res
-
-
-def image_demo(predictor, path, current_time):
-    if os.path.isdir(path):
-        files = get_image_list(path)
-    else:
-        files = [path]
-    files.sort()
-    for image_name in files:
-        outputs, img_info = predictor.inference(image_name)
-        result_image = predictor.visual(outputs[0], img_info, predictor.confthre)
-        if predictor.save_result:
-            save_folder = os.path.join(
-                predictor.vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S", current_time)
-            )
-            os.makedirs(save_folder, exist_ok=True)
-            save_file_name = os.path.join(save_folder, os.path.basename(image_name))
-            logger.info("Saving detection result in {}".format(save_file_name))
-            cv2.imwrite(save_file_name, result_image)
-        ch = cv2.waitKey(0)
-        if ch == 27 or ch == ord("q") or ch == ord("Q"):
-            break
-
-
-def imageflow_demo(predictor, path, current_time):
-    cap = cv2.VideoCapture(path if predictor.demo == "video" else predictor.camid)
-    width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)  # float
-    height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)  # float
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if predictor.save_result:
-        save_folder = os.path.join(
-            predictor.vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S", current_time)
-        )
-        os.makedirs(save_folder, exist_ok=True)
-        if predictor.demo == "video":
-            save_path = os.path.join(save_folder, os.path.basename(path))
-        else:
-            save_path = os.path.join(save_folder, "camera.mp4")
-        logger.info(f"video save_path is {save_path}")
-        vid_writer = cv2.VideoWriter(
-            save_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (int(width), int(height))
-        )
-    while True:
-        ret_val, frame = cap.read()
-        if ret_val:
-            outputs, img_info = predictor.inference(frame)
-            result_frame = predictor.visual(outputs[0], img_info, predictor.confthre)
-            if predictor.save_result:
-                vid_writer.write(result_frame)
-            else:
-                cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
-                cv2.imshow("yolox", result_frame)
-            ch = cv2.waitKey(1)
-            if ch == 27 or ch == ord("q") or ch == ord("Q"):
-                break
-        else:
-            break
-
-
-def run_demo(predictor, path):
-    current_time = time.localtime()
-    if predictor.demo == "image":
-        image_demo(predictor, path, current_time)
-    elif predictor.demo == "video" or predictor.demo == "webcam":
-        imageflow_demo(predictor, path, current_time)
-
-
 class PredictorBuilder:
-    def __init__(self, args_str):
-        self._args = make_parser().parse_args(args_str.split())
-        self._exp = get_exp(self._args.exp_file, self._args.name)
-
-    def check_exist(self):
-        print(os.path.abspath('.'))
-        print(os.path.exists(self._args.exp_file))
+    def __init__(self,
+                 exp=None,
+                 options=''
+                 ):
+        self._args = make_parser().parse_args(options.split())
+        self._exp = exp
 
     def build(self):
+        file_name = os.path.join(self._exp.output_dir, self._exp.exp_name)
+
         if not self._args.experiment_name:
             self._args.experiment_name = self._exp.exp_name
-
-        file_name = os.path.join(self._exp.output_dir, self._args.experiment_name)
-        os.makedirs(file_name, exist_ok=True)
-
-        vis_folder = None
-        if self._args.save_result:
-            vis_folder = os.path.join(file_name, "vis_res")
-            os.makedirs(vis_folder, exist_ok=True)
 
         if self._args.trt:
             self._args.device = "gpu"
@@ -330,10 +137,8 @@ class PredictorBuilder:
         predictor = Predictor(
             model=model,
             exp=self._exp,  # model and experiment
-            demo=self._args.demo,  # prbly remove later
-            vis_folder=vis_folder,  # prbly remove later
-            save_result=self._args.save_result,  # prbly remove later
-            camid=self._args.camid,  # prbly remove later
+            demo=self._args.demo,
+            camid=self._args.camid,
             cls_names=GTSDB_CLASSES,
             trt_file=trt_file,
             decoder=decoder,
@@ -343,3 +148,190 @@ class PredictorBuilder:
         )
 
         return predictor
+
+
+class Predictor(object):
+    def __init__(
+        self,
+        model,
+        exp,
+        demo,
+        camid=None,
+        cls_names=GTSDB_CLASSES,
+        trt_file=None,
+        decoder=None,
+        device="cpu",
+        fp16=False,
+        legacy=False,
+    ):
+        self.model = model
+        self.exp = exp
+        self.demo = demo
+        self.camid = camid
+        self.cls_names = cls_names
+        self.decoder = decoder
+        self.num_classes = exp.num_classes
+        self.confthre = exp.test_conf
+        self.nmsthre = exp.nmsthre
+        self.test_size = exp.test_size
+        self.device = device
+        self.fp16 = fp16
+        self.preproc = ValTransform(legacy=legacy)
+        if trt_file is not None:
+            from torch2trt import TRTModule
+
+            model_trt = TRTModule()
+            model_trt.load_state_dict(torch.load(trt_file))
+
+            x = torch.ones(1, 3, exp.test_size[0], exp.test_size[1]).cuda()
+            self.model(x)
+            self.model = model_trt
+
+    def inference(self, img):
+        img_info = {"id": 0}
+        if isinstance(img, str):
+            img_info["file_name"] = os.path.basename(img)
+            img = cv2.imread(img)
+        else:
+            img_info["file_name"] = None
+
+        height, width = img.shape[:2]
+        img_info["height"] = height
+        img_info["width"] = width
+        img_info["raw_img"] = img
+
+        ratio = min(self.test_size[0] / img.shape[0], self.test_size[1] / img.shape[1])
+        img_info["ratio"] = ratio
+
+        img, _ = self.preproc(img, None, self.test_size)
+        img = torch.from_numpy(img).unsqueeze(0)
+        img = img.float()
+        if self.device == "gpu":
+            img = img.cuda()
+            if self.fp16:
+                img = img.half()  # to FP16
+
+        with torch.no_grad():
+            t0 = time.perf_counter()
+            outputs = self.model(img)
+            if self.decoder is not None:
+                outputs = self.decoder(outputs, dtype=outputs.type())
+            outputs = postprocess(
+                outputs, self.num_classes, self.confthre,
+                self.nmsthre, class_agnostic=True
+            )
+            torch.cuda.synchronize()
+            logger.info("Infer time: {:.4f}s".format(time.perf_counter() - t0))
+        return outputs, img_info
+
+    def visual(self, output, img_info, cls_conf=0.35):
+        ratio = img_info["ratio"]
+        img = img_info["raw_img"]
+        if output is None:
+            return img
+        output = output.cpu()
+
+        bboxes = output[:, 0:4]
+
+        # preprocessing: resize
+        bboxes /= ratio
+
+        cls = output[:, 6]
+        scores = output[:, 4] * output[:, 5]
+
+        vis_res = vis(img, bboxes, scores, cls, cls_conf, self.cls_names)
+        return vis_res
+
+    def warmup(self, num_images):
+        logger.info("Warmup inference")
+        for i in range(num_images):
+            dummy_input = torch.randn(10, 10, 3).numpy()
+            self.inference(dummy_input)
+
+
+class BatchPredictor:
+    def __init__(self,
+                 predictor,
+                 save_result=False,
+                 ):
+        self._predictor = predictor
+        self._save_result = save_result
+
+        file_name = os.path.join(self._predictor.exp.output_dir, self._predictor.exp.exp_name)
+        os.makedirs(file_name, exist_ok=True)
+        self._vis_folder = None
+        if self._save_result:
+            self._vis_folder = os.path.join(file_name, "vis_res")
+            os.makedirs(self._vis_folder, exist_ok=True)
+
+    def run_demo(self, source_path):
+        current_time = time.localtime()
+        if self._predictor.demo == "image":
+            self._image_demo(source_path, current_time)
+        elif self._predictor.demo == "video" or self._predictor.demo == "webcam":
+            self._imageflow_demo(source_path, current_time)
+
+    def _image_demo(self, source_path, current_time):
+        if os.path.isdir(source_path):
+            files = self._get_image_list(source_path)
+        else:
+            files = [source_path]
+        files.sort()
+        for image_name in files:
+            outputs, img_info = self._predictor.inference(image_name)
+            result_image = self._predictor.visual(outputs[0], img_info, self._predictor.confthre)
+            if self._save_result:
+                save_folder = os.path.join(
+                    self._vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S", current_time)
+                )
+                os.makedirs(save_folder, exist_ok=True)
+                save_file_name = os.path.join(save_folder, os.path.basename(image_name))
+                logger.info("Saving detection result in {}".format(save_file_name))
+                cv2.imwrite(save_file_name, result_image)
+            ch = cv2.waitKey(0)
+            if ch == 27 or ch == ord("q") or ch == ord("Q"):
+                break
+
+    def _imageflow_demo(self, source_path, current_time):
+        cap = cv2.VideoCapture(source_path if self._predictor.demo == "video" else self._predictor.camid)
+        width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)  # float
+        height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)  # float
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if self._save_result:
+            save_folder = os.path.join(
+                self._vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S", current_time)
+            )
+            os.makedirs(save_folder, exist_ok=True)
+            if self._predictor.demo == "video":
+                save_path = os.path.join(save_folder, os.path.basename(source_path))
+            else:
+                save_path = os.path.join(save_folder, "camera.mp4")
+            logger.info(f"video save_path is {save_path}")
+            vid_writer = cv2.VideoWriter(
+                save_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (int(width), int(height))
+            )
+        while True:
+            ret_val, frame = cap.read()
+            if ret_val:
+                outputs, img_info = self._predictor.inference(frame)
+                result_frame = self._predictor.visual(outputs[0], img_info, self._predictor.confthre)
+                if self._save_result:
+                    vid_writer.write(result_frame)
+                else:
+                    cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
+                    cv2.imshow("yolox", result_frame)
+                ch = cv2.waitKey(1)
+                if ch == 27 or ch == ord("q") or ch == ord("Q"):
+                    break
+            else:
+                break
+
+    def _get_image_list(self, path):
+        image_names = []
+        for maindir, subdir, file_name_list in os.walk(path):
+            for filename in file_name_list:
+                apath = os.path.join(maindir, filename)
+                ext = os.path.splitext(apath)[1]
+                if ext in IMAGE_EXT:
+                    image_names.append(apath)
+        return image_names
