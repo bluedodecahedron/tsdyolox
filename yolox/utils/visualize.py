@@ -5,7 +5,24 @@
 import cv2
 import numpy as np
 
-__all__ = ["vis"]
+__all__ = ["vis", "boxes"]
+
+
+def boxes(img, boxes, scores, conf=0.5):
+    images = []
+    for i in range(len(boxes)):
+        box = boxes[i]
+        score = scores[i]
+        if score < conf:
+            continue
+        x0 = int(box[0])
+        y0 = int(box[1])
+        x1 = int(box[2])
+        y1 = int(box[3])
+
+        images.append(img[y0:y1, x0:x1])
+
+    return images
 
 
 def vis(img, boxes, scores, cls_ids, conf=0.5, class_names=None):

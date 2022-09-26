@@ -14,7 +14,7 @@ import torch
 from yolox.data.data_augment import ValTransform
 from yolox.data.datasets.gtsdb_classes import GTSDB_CLASSES
 from yolox.exp import get_exp
-from yolox.utils import fuse_model, get_model_info, postprocess, vis
+from yolox.utils import fuse_model, get_model_info, postprocess, vis, boxes
 
 IMAGE_EXT = [".jpg", ".jpeg", ".webp", ".bmp", ".png"]
 
@@ -224,21 +224,32 @@ class Predictor(object):
             logger.info("Infer time: {:.4f}s".format(time.perf_counter() - t0))
         return outputs, img_info
 
-    def visual(self, output, img_info, cls_conf=0.35):
+    def get_bboxes(self, output, img_info):
         ratio = img_info["ratio"]
-        img = img_info["raw_img"]
+        # make a copy so that our operations are done on a new object
+        img = img_info["raw_img"].copy()
         if output is None:
             return img
         output = output.cpu()
-
         bboxes = output[:, 0:4]
-
         # preprocessing: resize
         bboxes /= ratio
+        return img, output, bboxes
 
+    def get_scores(self, output):
         cls = output[:, 6]
         scores = output[:, 4] * output[:, 5]
+        return cls, scores
 
+    def boxes(self, output, img_info, cls_conf=0.35):
+        img, output, bboxes = self.get_bboxes(output, img_info)
+        cls, scores = self.get_scores(output)
+        images = boxes(img, bboxes, scores, cls_conf)
+        return images
+
+    def visual(self, output, img_info, cls_conf=0.35):
+        img, output, bboxes = self.get_bboxes(output, img_info)
+        cls, scores = self.get_scores(output)
         vis_res = vis(img, bboxes, scores, cls, cls_conf, self.cls_names)
         return vis_res
 
