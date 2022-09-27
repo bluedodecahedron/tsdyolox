@@ -228,8 +228,7 @@ class Predictor(object):
         ratio = img_info["ratio"]
         # make a copy so that our operations are done on a new object
         img = img_info["raw_img"].copy()
-        if output is None:
-            return img
+
         output = output.cpu()
         bboxes = output[:, 0:4]
         # preprocessing: resize
@@ -241,13 +240,19 @@ class Predictor(object):
         scores = output[:, 4] * output[:, 5]
         return cls, scores
 
-    def boxes(self, output, img_info, cls_conf=0.35):
+    def boxed_images(self, output, img_info, cls_conf=0.35):
+        if output is None:
+            return []
+
         img, output, bboxes = self.get_bboxes(output, img_info)
         cls, scores = self.get_scores(output)
         images = boxes(img, bboxes, scores, cls_conf)
         return images
 
     def visual(self, output, img_info, cls_conf=0.35):
+        if output is None:
+            return img_info["raw_img"].copy()
+
         img, output, bboxes = self.get_bboxes(output, img_info)
         cls, scores = self.get_scores(output)
         vis_res = vis(img, bboxes, scores, cls, cls_conf, self.cls_names)
