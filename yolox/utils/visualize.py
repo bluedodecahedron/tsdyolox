@@ -8,10 +8,10 @@ import numpy as np
 __all__ = ["vis", "boxes"]
 
 
-def boxes(img, boxes, scores, conf=0.5):
+def boxes(img, box_borders, scores, conf):
     images = []
-    for i in range(len(boxes)):
-        box = boxes[i]
+    for i in range(len(box_borders)):
+        box = box_borders[i]
         score = scores[i]
         if score < conf:
             continue
@@ -25,10 +25,10 @@ def boxes(img, boxes, scores, conf=0.5):
     return images
 
 
-def vis(img, boxes, scores, cls_ids, conf=0.5, class_names=None):
+def vis(img, box_borders, scores, cls_ids, conf, class_names=None):
 
-    for i in range(len(boxes)):
-        box = boxes[i]
+    for i in range(len(box_borders)):
+        box = box_borders[i]
         cls_id = int(cls_ids[i])
         score = scores[i]
         if score < conf:
