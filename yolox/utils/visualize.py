@@ -50,11 +50,11 @@ def vis(img, box_borders, scores, cls_ids, conf, class_names=None):
         cv2.rectangle(
             img,
             (x0, y0 + 1),
-            (x0 + txt_size[0] + 1, y0 + int(1.5*txt_size[1])),
+            (x0 + txt_size[0] + 1, y0 - int(1.5*txt_size[1])),
             txt_bk_color,
             -1
         )
-        cv2.putText(img, text, (x0, y0 + txt_size[1]), font, 0.4, txt_color, thickness=1)
+        cv2.putText(img, text, (x0, y0 - int(0.5*txt_size[1])), font, 0.4, txt_color, thickness=1)
 
     return img
 

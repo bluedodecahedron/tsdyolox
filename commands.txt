@@ -1,3 +1,0 @@
-python tools/demo.py image -n yolox-s -c YOLOX_outputs/yolox_s_gtsdb/best_ckpt.pth --path datasets/gtsdb01/test --save_result --device gpu --tsize 800 -f exps/example/custom/yolox_s_gtsdb.py --conf 0.3
-python tools/eval.py -n yolox-s -c YOLOX_outputs/yolox_s_gtsdb/best_ckpt.pth -f exps/example/custom/yolox_s_gtsdb.py -b 1 -d 1 --conf 0.001 --fp16 --fuse
-python tools/train.py -f exps/example/custom/yolox_s_gtsdb.py -d 1 -b 4 --fp16 -c yolox_s.pth

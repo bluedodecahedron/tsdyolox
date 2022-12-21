@@ -296,8 +296,8 @@ class BatchPredictor:
         while True:
             ret_val, frame = cap.read()
             if ret_val:
-                outputs, img_info = self._predictor.inference(frame)
-                result_frame = self._predictor.visual(outputs[0], img_info, self._predictor.confthre)
+                infer_result = self._predictor.inference(frame)
+                result_frame = infer_result.visual() # self._predictor.visual(outputs[0], img_info, self._predictor.confthre)
                 if self._save_result:
                     vid_writer.write(result_frame)
                 else:

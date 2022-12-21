@@ -219,3 +219,7 @@ events.out.tfevents*
 
 # vim
 .vim
+
+#wandb
+gtsdb/wandb
+wandb
