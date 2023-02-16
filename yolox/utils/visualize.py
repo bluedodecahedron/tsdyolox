@@ -5,24 +5,7 @@
 import cv2
 import numpy as np
 
-__all__ = ["vis", "boxes"]
-
-
-def boxes(img, box_borders, scores, conf):
-    images = []
-    for i in range(len(box_borders)):
-        box = box_borders[i]
-        score = scores[i]
-        if score < conf:
-            continue
-        x0 = int(box[0])
-        y0 = int(box[1])
-        x1 = int(box[2])
-        y1 = int(box[3])
-
-        images.append(img[y0:y1, x0:x1])
-
-    return images
+__all__ = ["vis"]
 
 
 def vis(img, box_borders, scores, cls_ids, conf, class_names=None):
@@ -37,6 +20,8 @@ def vis(img, box_borders, scores, cls_ids, conf, class_names=None):
         y0 = int(box[1])
         x1 = int(box[2])
         y1 = int(box[3])
+        if y1 < y0+2 or x1 < x0+2:
+            continue
 
         color = (_COLORS[cls_id] * 255).astype(np.uint8).tolist()
         text = '{}:{:.1f}%'.format(class_names[cls_id], score * 100)

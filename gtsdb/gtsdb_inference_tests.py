@@ -35,7 +35,7 @@ class InferenceTestsCodeFast(TestCase):
         ).build()
         image = cv2.imread(singleimage)
         infer_result = predictor.inference(image)
-        boxes = infer_result.get_boxed_images()
+        boxes = infer_result.boxed_images
         self.assertEqual(len(boxes), 9)
 
     def test_code_image_inference_show_result(self):
@@ -51,7 +51,7 @@ class InferenceTestsCodeFast(TestCase):
         image = cv2.imread(singleimage)
         infer_result = predictor.inference(image)
         result_image = infer_result.visual()
-        boxes = infer_result.get_boxed_images()
+        boxes = infer_result.boxed_images
         self.assertEqual(len(boxes), 9)
 
         cv2.imshow("result", result_image)

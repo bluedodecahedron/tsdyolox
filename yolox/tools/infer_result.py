@@ -1,6 +1,6 @@
 import torch
 
-from yolox.utils.visualize import vis, boxes
+from yolox.utils.visualize import vis
 
 
 class InferResult:
@@ -13,36 +13,52 @@ class InferResult:
         self.ratio = img_info["ratio"]
         self.confthre = confthre
         self.cls_names = cls_names
+        self.boxed_images, self.box_borders, self.classes, self.scores = self.process_output()
 
     def img_copy(self):
         # make a copy so that our operations are done on a new object
         return self.img.copy()
 
-    def get_box_borders(self):
+    def process_output(self):
+        if self.output is None:
+            return [], [], [], []
+
         box_borders = torch.clone(self.output)[:, 0:4]
+        classes = self.output[:, 6]
+        scores = self.output[:, 4] * self.output[:, 5]
+
         # preprocessing: resize
         box_borders /= self.ratio
-        return box_borders
 
-    def get_scores(self):
-        cls = self.output[:, 6]
-        scores = self.output[:, 4] * self.output[:, 5]
-        return cls, scores
+        boxed_images = []
+        new_box_borders = []
+        new_cls = []
+        new_scores = []
 
-    def get_boxed_images(self):
-        if self.output is None:
-            return []
+        for i in range(len(box_borders)):
+            box = box_borders[i]
+            cls = classes[i]
+            score = scores[i]
+            if score < self.confthre:
+                continue
+            for j, value in enumerate(box):
+                if value < 0.0:
+                    box[j] = 0
+            x0 = int(box[0])
+            y0 = int(box[1])
+            x1 = int(box[2])
+            y1 = int(box[3])
 
-        box_borders = self.get_box_borders()
-        cls, scores = self.get_scores()
-        images = boxes(self.img_copy(), box_borders, scores, self.confthre)
-        return images
+            boxed_images.append(self.img[y0:y1, x0:x1].copy())
+            new_box_borders.append([x0, y0, x1, y1])
+            new_cls.append(cls)
+            new_scores.append(score)
+
+        return boxed_images, box_borders, classes, scores
 
     def visual(self):
         if self.output is None:
-            return self.img.copy()
+            return self.img_copy()
 
-        box_borders = self.get_box_borders()
-        cls, scores = self.get_scores()
-        vis_res = vis(self.img_copy(), box_borders, scores, cls, self.confthre, self.cls_names)
+        vis_res = vis(self.img_copy(), self.box_borders, self.scores, self.classes, self.confthre, self.cls_names)
         return vis_res
