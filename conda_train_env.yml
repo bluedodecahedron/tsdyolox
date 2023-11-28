@@ -1,5 +1,5 @@
 # TODO: Update with exact module version
-name: tsdr
+name: yoloxtrain
 channels:
   - pytorch
   - conda-forge

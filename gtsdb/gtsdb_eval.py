@@ -17,7 +17,7 @@ def evaluate():
         f"-f {exp} "
         "-b 1 "
         "-d 1 "
-        "--conf 0.001 "
+        "--conf 0.75 "
         "--fp16 "
         "--fuse"
     )
